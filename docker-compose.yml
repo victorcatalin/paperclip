@@ -1,0 +1,88 @@
+services:
+  # -------------------------------------------------
+  # Postgres DB – used by Paperclip
+  # -------------------------------------------------
+  db:
+    image: postgres:17-alpine
+    container_name: paperclipdb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: paperclip
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paperclip}
+      POSTGRES_DB: paperclip
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - dockploy-network
+
+  # -------------------------------------------------
+  # Fix permissions on the shared Paperclip volume
+  # -------------------------------------------------
+  fix-permissions:
+    image: alpine
+    container_name: fix
+    command: sh -c "chown -R 1000:1000 /paperclip"
+    volumes:
+      - paperclip-data:/paperclip
+    networks:
+      - dockploy-network
+
+  # -------------------------------------------------
+  # Paperclip server
+  # -------------------------------------------------
+  server:
+    build:
+      dockerfile: Dockerfile
+    container_name: paperclip
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      fix-permissions:
+        condition: service_completed_successfully
+    ports:
+      - "3100:3100"
+    environment:
+      DATABASE_URL: postgres://paperclip:${POSTGRES_PASSWORD:-paperclip}@db:5432/paperclip
+      HOST: "0.0.0.0"
+      PORT: "3100"
+      PAPERCLIP_HOME: "/paperclip"
+      SERVE_UI: "true"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+      PAPERCLIP_PUBLIC_URL: ${PAPERCLIP_PUBLIC_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENCLAW_TOKEN: ${OPENCLAW_TOKEN}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      HONCHO_API_KEY: ${HONCHO_API_KEY}
+    volumes:
+      - paperclip-data:/paperclip
+      - /opt/data/hermes-gitops:/opt/data/hermes-gitops
+      - /opt/data/hermes-strategy:/opt/data/hermes-strategy
+      - /opt/data/hermes-cto:/opt/data/hermes-cto
+      - /opt/data/smm-content:/opt/data/smm-content
+      - /opt/data/smm-visuals:/opt/data/smm-visuals
+      - /opt/data/smm-publish:/opt/data/smm-publish
+      - /opt/hermes-agent:/opt/hermes-agent:ro
+      - /opt/data/wrappers:/opt/data/wrappers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dockploy-network
+
+volumes:
+  pgdata:
+  paperclip-data:
+
+networks:
+  dockploy-network:
+    external: true
